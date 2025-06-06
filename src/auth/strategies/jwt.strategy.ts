@@ -2,30 +2,39 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { UsersService } from '../../users/users.service'; // Para validar se o usuário ainda existe/está ativo
+import { UsersService } from '../../users/users.service';
+import { UserRole } from '@prisma/client'; // Renomeado para evitar conflito local
+
+export interface JwtPayload {
+  email: string;
+  sub: string; // userId
+  role: UserRole; // Usar o UserRole importado do prisma
+  name: string;
+  userId: string; // Adicionado para ser explícito, é o mesmo que 'sub'
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
-    private usersService: UsersService, // Opcional: para verificar se o usuário ainda existe
+    private usersService: UsersService,
   ) {
+    const jwtSecret = configService.get<string>('JWT_SECRET');
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET'),
+      secretOrKey: jwtSecret,
     });
   }
 
-  async validate(payload: any) {
-    // O payload é o objeto que foi assinado no token JWT (email, sub, role)
-    // Você pode adicionar mais verificações aqui, como consultar o banco de dados
-    // para garantir que o usuário ainda existe ou não está bloqueado.
-    const user = await this.usersService.findOne(payload.sub); // payload.sub é o userId
-    if (!user) {
-        throw new UnauthorizedException('Usuário não encontrado ou token inválido.');
+  async validate(payload: { sub: string; email: string; role: UserRole; name: string; }): Promise<JwtPayload> {
+    const userExists = await this.usersService.findOne(payload.sub);
+    if (!userExists) {
+        throw new UnauthorizedException('Usuário do token não encontrado.');
     }
-    // O que for retornado aqui será anexado ao objeto `req.user` nas rotas protegidas
-    return { userId: payload.sub, email: payload.email, role: payload.role, name: user.name };
+    return { userId: payload.sub, email: payload.email, role: payload.role, name: payload.name, sub: payload.sub };
   }
 }

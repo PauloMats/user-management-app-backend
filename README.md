@@ -1,98 +1,151 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+ Conectar Backend - Gerenciamento de Usuários
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Este é o backend da aplicação Conectar, desenvolvido com NestJS e TypeScript. Ele é responsável pelo gerenciamento de usuários, autenticação (incluindo JWT), autorização baseada em papéis e fornece uma API RESTful para o frontend. Utiliza Prisma como ORM e PostgreSQL como banco de dados.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Funcionalidades Principais
 
-## Description
+* **Autenticação:**
+    * Registro de novos usuários (`/auth/register`).
+    * Login de usuários existentes com email e senha (`/auth/login`).
+    * Geração de JSON Web Tokens (JWT) para sessões seguras.
+* **Gerenciamento de Usuários (CRUD):**
+    * Criação de usuários (geralmente via registro, ou por admin).
+    * Leitura de informações de usuários (lista para admins, perfil para usuários).
+    * Atualização de informações de usuários (admins podem mais, usuários atualizam próprio perfil).
+    * Exclusão de usuários (apenas admins).
+* **Autorização:**
+    * Sistema de papéis (`ADMIN`, `USER`).
+    * Guards para proteger rotas baseadas no papel do usuário.
+* **Filtros e Ordenação:**
+    * Admins podem listar usuários filtrando por papel e ordenando por nome ou data de criação.
+* **Notificações (Usuários Inativos):**
+    * Endpoint para listar usuários que não realizam login há mais de 30 dias (acessível por admins).
+* **Documentação da API:**
+    * Gerada automaticamente com Swagger (OpenAPI) e acessível em `/api-docs`.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Tecnologias Utilizadas
 
-## Project setup
+* **Framework:** NestJS (Node.js)
+* **Linguagem:** TypeScript
+* **Banco de Dados:** PostgreSQL
+* **ORM:** Prisma
+* **Autenticação:** `jsonwebtoken`, `bcrypt`, `@nestjs/passport`, `passport-jwt`, `passport-local`
+* **Validação:** `class-validator`, `class-transformer`
+* **Documentação:** `@nestjs/swagger`
 
-```bash
-$ npm install
+## Estrutura do Projeto
+
+```
+prisma/
+├── schema.prisma             # Definição do schema do banco de dados para o Prisma
+└── migrations/               # Migrações do banco de dados geradas pelo Prisma
+src/
+├── app.module.ts             # Módulo raiz da aplicação
+├── main.ts                   # Ponto de entrada da aplicação (bootstrap)
+│
+├── auth/                     # Módulo de Autenticação
+│   ├── dto/
+│   ├── strategies/
+│   ├── guards/
+│   ├── decorators/
+│   ├── auth.module.ts
+│   ├── auth.controller.ts
+│   └── auth.service.ts
+│
+├── users/                    # Módulo de Usuários
+│   ├── dto/
+│   ├── users.module.ts
+│   ├── users.controller.ts
+│   └── users.service.ts
+│
+└── prisma/                   # Módulo e serviço do Prisma
+    ├── prisma.module.ts
+    └── prisma.service.ts
+
+.env                          # Variáveis de ambiente (NÃO versionar)
+.env.example                  # Exemplo de variáveis de ambiente
+tsconfig.json                 # Configuração do TypeScript
+...
 ```
 
-## Compile and run the project
+## Pré-requisitos
+
+* Node.js (v16 ou superior recomendado)
+* npm (v8+) ou yarn (v1.22+)
+* PostgreSQL (v12+) instalado e rodando
+* Git
+
+## Configuração do Ambiente (`.env`)
+
+1.  Na raiz do projeto backend, crie um arquivo chamado `.env`.
+2.  Adicione a string de conexão para o seu banco PostgreSQL e outras configurações:
+
+    ```env
+    DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE_NAME?schema=public"
+    # Exemplo: DATABASE_URL="postgresql://postgres:admin@localhost:5432/conectar_db_prisma?schema=public"
+
+    PORT=3001
+    JWT_SECRET=sua_chave_secreta_super_longa_e_segura_aqui
+    JWT_EXPIRATION_TIME=3600s
+    ```
+    Substitua `USER`, `PASSWORD`, `HOST`, `PORT`, e `DATABASE_NAME` pelos seus valores.
+
+## Instalação das Dependências
 
 ```bash
-# development
-$ npm run start
+# Usando npm
+npm install
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+# Ou usando yarn
+yarn install
 ```
 
-## Run tests
+## Configuração do Banco de Dados e Migrations (Prisma)
 
-```bash
-# unit tests
-$ npm run test
+1.  **Certifique-se** de que seu servidor PostgreSQL está rodando e que você criou o banco de dados especificado em `DATABASE_NAME` na sua `DATABASE_URL`.
+2.  **Certifique-se** de que o usuário do banco de dados especificado na `DATABASE_URL` tem permissão para criar bancos de dados no servidor PostgreSQL (permissão `CREATEDB`). Isso é necessário para o "shadow database" do Prisma durante o desenvolvimento.
+    ```sql
+    -- No psql, como superusuário:
+    ALTER USER seu_usuario_db CREATEDB;
+    ```
+3.  **Defina o Schema do Banco de Dados**:
+    Edite o arquivo `prisma/schema.prisma` para definir seus modelos de dados (ex: `User`, `UserRole`).
+4.  **Aplique as Migrations e Gere o Prisma Client**:
+    Este comando irá criar as tabelas no seu banco de dados com base no `schema.prisma` e gerar o Prisma Client.
+    ```bash
+    npx prisma migrate dev --name nome_descritivo_da_migracao
+    ```
+    (Ex: `npx prisma migrate dev --name initial_setup`)
 
-# e2e tests
-$ npm run test:e2e
+    Se você fizer alterações no `prisma/schema.prisma` no futuro, rode `npx prisma migrate dev --name nome_da_nova_alteracao` novamente.
+    Pode ser necessário rodar `npx prisma generate` manualmente após algumas alterações ou se o client não estiver atualizado.
 
-# test coverage
-$ npm run test:cov
-```
+## Rodando a Aplicação
 
-## Deployment
+* **Modo de Desenvolvimento (com hot-reload):**
+    ```bash
+    # npm
+    npm run start:dev
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+    # yarn
+    yarn start:dev
+    ```
+A aplicação estará disponível em `http://localhost:PORT` (o `PORT` definido no seu `.env` ou 3001 por padrão).
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Documentação da API (Swagger)
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+Após iniciar a aplicação, a documentação da API gerada pelo Swagger estará disponível em:
+`http://localhost:PORT/api-docs`
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Testes (A Serem Implementados)
 
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+* **Rodar testes unitários:**
+    ```bash
+    # npm
+    npm run test
+    ```
+* **Rodar testes de integração (e2e):**
+    ```bash
+    # npm
+    npm run test:e2e
+    ```

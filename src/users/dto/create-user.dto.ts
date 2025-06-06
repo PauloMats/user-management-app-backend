@@ -1,6 +1,6 @@
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '../entities/user.entity';
+import { UserRole } from '@prisma/client';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Maria Souza', description: 'Nome completo do usuário' })
@@ -20,6 +20,6 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({ enum: UserRole, example: UserRole.USER, description: 'Papel do usuário (opcional, padrão user)' })
   @IsOptional()
-  @IsEnum(UserRole, { message: 'Papel inválido. Use "admin" ou "user".' })
+  @IsEnum(UserRole, { message: 'Papel inválido. Use "ADMIN" ou "USER".' })
   role?: UserRole;
 }

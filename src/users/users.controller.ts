@@ -1,13 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req, HttpCode, HttpStatus } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UserRole } from './entities/user.entity';
+import { UserRole } from '@prisma/client';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { User } from './entities/user.entity';
+import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -15,116 +15,104 @@ import { User } from './entities/user.entity';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  /**
-   * Admin-only endpoint to create a new user.
-   */
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Create a new user (Admin only)' })
-  @ApiResponse({ status: 201, description: 'User created successfully.' })
-  @ApiResponse({ status: 400, description: 'Invalid data.' })
-  @ApiResponse({ status: 403, description: 'Access denied.' })
+  @ApiOperation({ summary: 'Cria um novo usuário (Admin only)' })
+  @ApiResponse({ status: 201, description: 'Usuário criado com sucesso.' })
+  @ApiResponse({ status: 400, description: 'Dados inválidos.' })
+  @ApiResponse({ status: 403, description: 'Acesso negado.' })
   createByAdmin(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
 
-/**
- * Admin-only endpoint to list all users.
- */
-@Get()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
-@ApiOperation({ summary: 'List all users (Admin only)' })
-@ApiQuery({ name: 'role', enum: UserRole, required: false, description: 'Filter users by role' })
-@ApiQuery({ name: 'sortBy', type: String, required: false, description: 'Field to sort by (e.g., name, createdAt)' })
-@ApiQuery({ name: 'order', enum: ['ASC', 'DESC'], required: false, description: 'Sort order (ASC or DESC)' })
-@ApiResponse({ status: 200, description: 'List of users returned successfully.'})
-findAll(
-  @Query('role') role?: UserRole,
-  @Query('sortBy') sortBy?: string,
-  @Query('order') order?: 'ASC' | 'DESC',
-) {
-  return this.usersService.findAll({ role, sortBy, order });
-}
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Lista todos os usuários (Admin only)' })
+  @ApiQuery({ name: 'role', enum: UserRole, required: false, description: 'Filtra usuários por papel' })
+  @ApiQuery({ name: 'sortBy', type: String, required: false, description: 'Campo para ordenação (ex: name, createdAt)' })
+  @ApiQuery({ name: 'order', enum: ['ASC', 'DESC'], required: false, description: 'Ordem da ordenação (ASC ou DESC)' })
+  @ApiResponse({ status: 200, description: 'Lista de usuários retornada com sucesso.'})
+  findAll(
+    @Query('role') role?: UserRole,
+    @Query('sortBy') sortBy?: string,
+    @Query('order') order?: 'ASC' | 'DESC',
+  ) {
+    const normalizedOrder = order ? order.toLowerCase() as 'asc' | 'desc' : undefined;
+    return this.usersService.findAll({ role, sortBy, order: normalizedOrder });
+  }
 
-  /**
-   * Endpoint to get the profile of the logged-in user.
-   */
   @Get('profile')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get the profile of the logged-in user' })
-  @ApiResponse({ status: 200, description: 'User profile returned successfully.'})
-  @ApiResponse({ status: 401, description: 'Unauthorized.'})
-  getProfile(@Req() req: { user: { userId: string } }) {
+  @ApiOperation({ summary: 'Obtém o perfil do usuário logado' })
+  @ApiResponse({ status: 200, description: 'Perfil do usuário retornado com sucesso.'})
+  @ApiResponse({ status: 401, description: 'Não autorizado.'})
+  getProfile(@Req() req: { user: JwtPayload }) {
     const userId = req.user.userId;
+    if (!userId) {
+      throw new Error('User ID is missing from JWT payload.');
+    }
     return this.usersService.findOne(userId);
   }
 
-  /**
-   * Admin-only endpoint to get a user by ID.
-   */
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Get a specific user by ID (Admin only)' })
+  @ApiOperation({ summary: 'Obtém um usuário específico por ID (Admin only)' })
   @ApiParam({ name: 'id', type: 'string', description: 'User ID (UUID)'})
-  @ApiResponse({ status: 200, description: 'User returned successfully.'})
-  @ApiResponse({ status: 404, description: 'User not found.'})
+  @ApiResponse({ status: 200, description: 'Usuário retornado com sucesso.'})
+  @ApiResponse({ status: 404, description: 'Usuário não encontrado.'})
   findOne(@Param('id') id: string) {
     return this.usersService.findOne(id);
   }
 
-  /**
-   * Endpoint to update the profile of the logged-in user.
-   */
   @Patch('profile')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Update the profile of the logged-in user' })
-  @ApiResponse({ status: 200, description: 'Profile updated successfully.'})
-  @ApiResponse({ status: 400, description: 'Invalid data.'})
-  @ApiResponse({ status: 401, description: 'Unauthorized.'})
-  @ApiResponse({ status: 404, description: 'User not found.'})
-  updateProfile(@Req() req: { user: User }, @Body() updateUserDto: UpdateUserDto) {
-    const userId = req.user.userId;
-    const currentUser = req.user as User;
-    if (updateUserDto.role) delete updateUserDto.role;
-    return this.usersService.update(userId, updateUserDto, currentUser);
+  @ApiOperation({ summary: 'Atualiza o perfil do usuário logado' })
+  @ApiResponse({ status: 200, description: 'Perfil atualizado com sucesso.'})
+  @ApiResponse({ status: 400, description: 'Dados inválidos.'})
+  @ApiResponse({ status: 401, description: 'Não autorizado.'})
+  @ApiResponse({ status: 404, description: 'Usuário não encontrado.'})
+  updateProfile(@Req() req: { user: JwtPayload }, @Body() updateUserDto: UpdateUserDto) {
+    if (!req.user.userId) {
+      throw new Error('User ID is missing from JWT payload.');
+    }
+    const currentUserDetails = { userId: req.user.userId, role: req.user.role, name: req.user.name };
+    if (updateUserDto.role && req.user.role !== UserRole.ADMIN) {
+        delete updateUserDto.role;
+    }
+    return this.usersService.update(req.user.userId, updateUserDto, currentUserDetails);
   }
 
-  /**
-   * Admin-only endpoint to update any user by ID.
-   */
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Update a specific user by ID (Admin only)' })
+  @ApiOperation({ summary: 'Atualiza um usuário específico por ID (Admin only)' })
   @ApiParam({ name: 'id', type: 'string', description: 'User ID (UUID)'})
-  @ApiResponse({ status: 200, description: 'User updated successfully.'})
-  @ApiResponse({ status: 404, description: 'User not found.'})
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Req() req: { user: User }) {
-    const currentUser = req.user as User;
-    return this.usersService.update(id, updateUserDto, currentUser);
+  @ApiResponse({ status: 200, description: 'Usuário atualizado com sucesso.'})
+  @ApiResponse({ status: 404, description: 'Usuário não encontrado.'})
+  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Req() req: { user: JwtPayload }) {
+    const currentUserDetails = { userId: req.user.userId as string, role: req.user.role, name: req.user.name };
+    return this.usersService.update(id, updateUserDto, currentUserDetails);
   }
 
-  /**
-   * Admin-only endpoint to delete a user by ID.
-   */
   @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT) // Retorna 204 em caso de sucesso
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Delete a specific user by ID (Admin only)' })
+  @ApiOperation({ summary: 'Exclui um usuário específico por ID (Admin only)' })
   @ApiParam({ name: 'id', type: 'string', description: 'User ID (UUID)'})
-  @ApiResponse({ status: 204, description: 'User deleted successfully.' })
-  @ApiResponse({ status: 404, description: 'User not found.'})
-  remove(@Param('id') id: string, @Req() req: { user: User }) {
-    const currentUser = req.user as User;
-    return this.usersService.remove(id, currentUser);
+  @ApiResponse({ status: 204, description: 'Usuário excluído com sucesso.' })
+  @ApiResponse({ status: 404, description: 'Usuário não encontrado.'})
+  async remove(@Param('id') id: string, @Req() req: { user: JwtPayload }) {
+    if (!req.user.userId) {
+      throw new Error('User ID is missing from JWT payload.');
+    }
+    const currentUserDetails = { userId: req.user.userId as string, role: req.user.role, name: req.user.name };
+    await this.usersService.remove(id, currentUserDetails);
   }
 
-  /**
-   * Admin-only endpoint to list inactive users (not logged in for the last 30 days).
-   */
   @Get('inactive')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

@@ -1,114 +1,152 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindManyOptions, MoreThan } from 'typeorm';
-import { User, UserRole } from './entities/user.entity';
+import { PrismaService } from '../prisma/prisma.service';
+import { User, UserRole } from '@prisma/client'; // Tipos do Prisma
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcrypt';
+
+export type SafeUser = Omit<User, 'password'>;
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private usersRepository: Repository<User>,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    const { email, password } = createUserDto; // Senha será hasheada pelo hook @BeforeInsert na entidade
+  private async hashPassword(password: string): Promise<string> {
+    const saltRounds = 10;
+    return bcrypt.hash(password, saltRounds);
+  }
 
-    // Verifica se o email já existe
-    const existingUser = await this.usersRepository.findOne({ where: { email } });
+  private safeReturnUser(user: User): SafeUser {
+    const { password, ...safeUser } = user;
+    return safeUser;
+  }
+
+  async create(createUserDto: CreateUserDto): Promise<SafeUser> {
+    const { email, password: plainPassword, ...restData } = createUserDto;
+
+    const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       throw new ConflictException('Este email já está cadastrado.');
     }
 
-    const user = this.usersRepository.create(createUserDto);
-    // O hook BeforeInsert/BeforeUpdate na entidade User irá hashear a senha
-    return this.usersRepository.save(user);
-  }
+    const hashedPassword = await this.hashPassword(plainPassword);
 
-  async findAll(query?: { role?: UserRole; sortBy?: string; order?: 'ASC' | 'DESC' }): Promise<User[]> {
-    const options: FindManyOptions<User> = {};
-    if (query?.role) {
-      options.where = { role: query.role };
-    }
-    if (query?.sortBy) {
-      options.order = { [query.sortBy]: query.order || 'ASC' };
-    }
-    // Remove a senha do retorno
-    const users = await this.usersRepository.find(options);
-    return users.map(user => {
-      delete user.password;
-      return user;
+    const user = await this.prisma.user.create({
+      data: {
+        ...restData,
+        email,
+        password: hashedPassword,
+        role: createUserDto.role || UserRole.USER,
+      },
     });
+    return this.safeReturnUser(user);
   }
 
-  async findOne(id: string): Promise<User | null> {
-    const user = await this.usersRepository.findOne({ where: { id } });
+  async findAll(query?: { role?: UserRole; sortBy?: string; order?: 'asc' | 'desc' }): Promise<SafeUser[]> {
+    const users = await this.prisma.user.findMany({
+      where: query?.role ? { role: query.role } : undefined,
+      orderBy: query?.sortBy ? { [query.sortBy]: query.order || 'asc' } : { createdAt: 'desc' },
+    });
+    return users.map(user => this.safeReturnUser(user));
+  }
+
+  async findOne(id: string): Promise<SafeUser | null> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException(`Usuário com ID "${id}" não encontrado.`);
     }
-    delete user.password; // Nunca retorne a senha hasheada diretamente
-    return user;
+    return this.safeReturnUser(user);
   }
 
   async findOneByEmail(email: string): Promise<User | null> {
-    // Este método é útil para autenticação, então pode retornar a senha
-    return this.usersRepository.findOne({ where: { email } });
+    return this.prisma.user.findUnique({ where: { email } });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto, currentUser: User): Promise<User> {
-    const userToUpdate = await this.usersRepository.findOne({ where: { id } });
+  async update(id: string, updateUserDto: UpdateUserDto, currentUserDetails: { userId: string, role: UserRole, name?: string }): Promise<SafeUser> {
+    const userToUpdate = await this.prisma.user.findUnique({ where: { id } });
     if (!userToUpdate) {
       throw new NotFoundException(`Usuário com ID "${id}" não encontrado.`);
     }
 
-    // Regras de permissão
-    if (currentUser.role !== UserRole.ADMIN && currentUser.id !== id) {
+    if (currentUserDetails.role !== UserRole.ADMIN && currentUserDetails.userId !== id) {
       throw new ForbiddenException('Você não tem permissão para atualizar este usuário.');
     }
 
-    // Admin pode mudar o role, usuário normal não
-    if (updateUserDto.role && currentUser.role !== UserRole.ADMIN) {
-      delete updateUserDto.role; // Ignora a tentativa de mudar o role
+    const dataToUpdate: Partial<User> & { password?: string } = {};
+
+    if (updateUserDto.name) {
+        dataToUpdate.name = updateUserDto.name;
     }
 
-    // Se a senha está sendo atualizada, ela será hasheada pelo hook @BeforeUpdate
-    Object.assign(userToUpdate, updateUserDto);
-    const updatedUser = await this.usersRepository.save(userToUpdate);
-    delete updatedUser.password;
-    return updatedUser;
+    if (updateUserDto.password) {
+        if (currentUserDetails.userId === id) {
+            if (!updateUserDto.currentPassword) {
+                throw new BadRequestException('Senha atual é obrigatória para alterar a senha.');
+            }
+            const isCurrentPasswordValid = userToUpdate.password ? await bcrypt.compare(updateUserDto.currentPassword, userToUpdate.password) : false;
+            if (!isCurrentPasswordValid) {
+                throw new BadRequestException('Senha atual incorreta.');
+            }
+        } else if (currentUserDetails.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('Você não tem permissão para alterar a senha deste usuário.');
+        }
+        dataToUpdate.password = await this.hashPassword(updateUserDto.password);
+    }
+
+    if (updateUserDto.role) {
+        if (currentUserDetails.role !== UserRole.ADMIN) {
+            if (currentUserDetails.userId === id) {
+                 console.warn(`Usuário ${currentUserDetails.userId} tentou alterar o próprio papel para ${updateUserDto.role}. Ação ignorada.`);
+            } else {
+                throw new ForbiddenException('Você não tem permissão para alterar o papel de usuários.');
+            }
+        } else {
+            dataToUpdate.role = updateUserDto.role;
+        }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+    return this.safeReturnUser(updatedUser);
   }
 
-  async remove(id: string, currentUser: User): Promise<void> {
-    // Regra: Admin não pode se auto-deletar (ou precisa de lógica especial)
-    if (currentUser.id === id) {
-        throw new BadRequestException('Você não pode excluir sua própria conta como administrador por esta rota.');
-    }
-
-    const result = await this.usersRepository.delete(id);
-    if (result.affected === 0) {
+  async remove(id: string, currentUserDetails: { userId: string, role: UserRole, name?: string }): Promise<void> {
+    const userToDelete = await this.prisma.user.findUnique({ where: { id } });
+     if (!userToDelete) {
       throw new NotFoundException(`Usuário com ID "${id}" não encontrado.`);
     }
+
+    if (currentUserDetails.role !== UserRole.ADMIN) {
+        throw new ForbiddenException('Apenas administradores podem excluir usuários.');
+    }
+    if (currentUserDetails.userId === id) {
+        throw new BadRequestException('Administradores não podem excluir a própria conta por esta rota.');
+    }
+
+    await this.prisma.user.delete({ where: { id } });
   }
 
-  async findInactiveUsers(): Promise<User[]> {
+  async findInactiveUsers(): Promise<SafeUser[]> {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Considera inativo quem não logou nos últimos 30 dias
-    // OU quem foi criado há mais de 30 dias e nunca logou (lastLoginAt é null)
-    const inactiveUsers = await this.usersRepository.createQueryBuilder("user")
-        .where("user.lastLoginAt < :thirtyDaysAgo", { thirtyDaysAgo })
-        .orWhere("(user.lastLoginAt IS NULL AND user.createdAt < :thirtyDaysAgo)", { thirtyDaysAgo })
-        .getMany();
-
-    return inactiveUsers.map(user => {
-        delete user.password;
-        return user;
+    const inactiveUsers = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { lastLoginAt: { lt: thirtyDaysAgo } },
+          { lastLoginAt: null, createdAt: { lt: thirtyDaysAgo } },
+        ],
+      },
     });
+    return inactiveUsers.map(user => this.safeReturnUser(user));
   }
 
   async updateLastLogin(userId: string): Promise<void> {
-    await this.usersRepository.update(userId, { lastLoginAt: new Date() });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    });
   }
 }

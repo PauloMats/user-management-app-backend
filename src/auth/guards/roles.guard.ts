@@ -1,7 +1,8 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { UserRole } from '../../users/entities/user.entity';
+import { UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { JwtPayload } from '../strategies/jwt.strategy';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -13,9 +14,10 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
     if (!requiredRoles) {
-      return true; // Se não há roles definidos, permite o acesso (JwtAuthGuard já protegeu)
+      return true;
     }
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest();
+    const user = request.user as JwtPayload;
 
     if (!user || !user.role) {
         throw new ForbiddenException('Você não tem permissão para acessar este recurso (papel não definido).');
